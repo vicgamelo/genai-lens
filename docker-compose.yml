@@ -1,0 +1,27 @@
+# Local stack: collector + Postgres. For SQLite only, `docker run -p 8080:8080 ghcr.io/vicgamelo/genai-lens`.
+services:
+  genai-lens:
+    build: .
+    ports: ["8080:8080"]
+    environment:
+      GENAI_LENS_DATABASE_URL: postgresql+psycopg://lens:lens@postgres:5432/lens
+      GENAI_LENS_API_KEYS: ${GENAI_LENS_API_KEYS:-dev-key}
+      GENAI_LENS_RETENTION_DAYS: "30"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: lens
+      POSTGRES_PASSWORD: lens
+      POSTGRES_DB: lens
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lens"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>genai-lens</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121821; --line: #1f2a37; --text: #e6edf3; --muted: #8b98a5;
+    --accent: #5eead4; --accent2: #a78bfa; --err: #f87171; --ok: #34d399;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-size: 14px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between;
+           padding: 16px 24px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 18px; margin: 0; letter-spacing: .3px; }
+  header h1 span { color: var(--accent); }
+  .controls { display: flex; gap: 8px; }
+  select, button { background: var(--panel); color: var(--text); border: 1px solid var(--line);
+                   border-radius: 8px; padding: 6px 10px; font: inherit; cursor: pointer; }
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .6px; }
+  .kpi .value { font-size: 24px; font-weight: 600; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 12px; margin-top: 12px; }
+  h2 { font-size: 13px; color: var(--muted); font-weight: 500; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .6px; }
+  canvas { max-height: 240px; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  tr.clickable:hover { background: #18212d; cursor: pointer; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 12px; }
+  .pill.ok { background: #064e3b; color: var(--ok); } .pill.error { background: #450a0a; color: var(--err); }
+  .muted { color: var(--muted); }
+  dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+           width: min(1000px, 94vw); max-height: 86vh; padding: 20px; }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .wf-row { display: grid; grid-template-columns: minmax(160px, 260px) 1fr 90px; gap: 10px; align-items: center;
+            padding: 6px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  .wf-track { position: relative; height: 14px; background: #0e141c; border-radius: 4px; }
+  .wf-bar { position: absolute; top: 0; height: 14px; border-radius: 4px; min-width: 2px; }
+  .k-llm { background: var(--accent); } .k-tool { background: #fbbf24; } .k-agent { background: var(--accent2); }
+  .k-retrieval { background: #60a5fa; } .k-chain, .k-other, .k-embedding { background: #64748b; }
+  .k-error { background: var(--err) !important; }
+  pre { white-space: pre-wrap; word-break: break-word; background: #0e141c; padding: 10px; border-radius: 8px;
+        max-height: 220px; overflow: auto; font-size: 12px; }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+  @media (max-width: 640px) { header, main { padding-left: 16px; padding-right: 16px; } .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>genai<span>-lens</span> <span class="muted" style="font-weight:400;font-size:13px">LLM observability</span></h1>
+  <div class="controls">
+    <select id="project"><option value="">all projects</option></select>
+    <select id="window">
+      <option value="1h">last hour</option><option value="24h" selected>last 24h</option>
+      <option value="7d">last 7 days</option><option value="30d">last 30 days</option>
+    </select>
+    <button id="refresh" title="refresh">↻</button>
+  </div>
+</header>
+<main>
+  <section class="kpis" id="kpis"></section>
+  <section class="grid2">
+    <div class="card"><h2>LLM calls &amp; errors</h2><canvas id="callsChart"></canvas></div>
+    <div class="card"><h2>Cost (USD) &amp; p95 latency (ms)</h2><canvas id="costChart"></canvas></div>
+  </section>
+  <section class="card" style="margin-top:12px"><h2>Models</h2><div class="table-wrap"><table id="models"></table></div></section>
+  <section class="card" style="margin-top:12px"><h2>Recent traces</h2><div class="table-wrap"><table id="traces"></table></div></section>
+</main>
+<dialog id="trace">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 id="traceTitle" style="margin:0"></h2><button id="closeTrace">close</button>
+  </div>
+  <div id="waterfall"></div>
+  <div id="spanDetail" style="margin-top:14px"></div>
+</dialog>
+<script>
+const $ = (id) => document.getElementById(id);
+const el = (tag, attrs = {}, ...children) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v; else if (k === "style") node.style.cssText = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v); else node.setAttribute(k, v);
+  }
+  for (const c of children) node.append(c instanceof Node ? c : document.createTextNode(c ?? ""));
+  return node;
+};
+const fmt = {
+  int: (n) => (n ?? 0).toLocaleString("en-US"),
+  usd: (n) => "$" + (n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 }),
+  ms: (n) => n == null ? "—" : n >= 1000 ? (n / 1000).toFixed(2) + " s" : Math.round(n) + " ms",
+  pct: (n) => ((n ?? 0) * 100).toFixed(1) + "%",
+  time: (iso) => new Date(iso).toLocaleString(),
+};
+const charts = {};
+const qs = () => new URLSearchParams({ window: $("window").value, ...($("project").value ? { project: $("project").value } : {}) });
+const getJSON = async (url) => { const r = await fetch(url); if (!r.ok) throw new Error(url + " " + r.status); return r.json(); };
+
+function renderKpis(s) {
+  const items = [
+    ["Traces", fmt.int(s.traces)], ["LLM calls", fmt.int(s.llm_calls)], ["Error rate", fmt.pct(s.error_rate)],
+    ["p50 latency", fmt.ms(s.p50_ms)], ["p95 latency", fmt.ms(s.p95_ms)],
+    ["Tokens in / out", fmt.int(s.input_tokens) + " / " + fmt.int(s.output_tokens)], ["Cost", fmt.usd(s.cost_usd)],
+  ];
+  $("kpis").replaceChildren(...items.map(([l, v]) => el("div", { class: "card kpi" }, el("div", { class: "label" }, l), el("div", { class: "value" }, v))));
+  const sel = $("project"), current = sel.value;
+  sel.replaceChildren(el("option", { value: "" }, "all projects"), ...s.projects.map((p) => el("option", { value: p }, p)));
+  sel.value = current;
+}
+
+function renderModels(models) {
+  const head = el("tr", {}, ...["Model", "Calls", "Errors", "Tokens in", "Tokens out", "p95", "Cost"].map((h) => el("th", {}, h)));
+  const rows = models.map((m) => el("tr", {}, el("td", {}, m.model), el("td", {}, fmt.int(m.calls)), el("td", {}, fmt.int(m.errors)),
+    el("td", {}, fmt.int(m.input_tokens)), el("td", {}, fmt.int(m.output_tokens)), el("td", {}, fmt.ms(m.p95_ms)), el("td", {}, fmt.usd(m.cost_usd))));
+  $("models").replaceChildren(head, ...(rows.length ? rows : [el("tr", {}, el("td", { colspan: 7, class: "empty" }, "No LLM calls in this window"))]));
+}
+
+function renderTraces(traces) {
+  const head = el("tr", {}, ...["When", "Trace", "Project", "Status", "Spans", "Tokens", "Duration", "Cost"].map((h) => el("th", {}, h)));
+  const rows = traces.map((t) => el("tr", { class: "clickable", onclick: () => openTrace(t.trace_id, t.name) },
+    el("td", { class: "muted" }, fmt.time(t.start_time)), el("td", {}, t.name), el("td", {}, t.project),
+    el("td", {}, el("span", { class: "pill " + t.status }, t.status)), el("td", {}, fmt.int(t.spans)),
+    el("td", {}, fmt.int(t.tokens)), el("td", {}, fmt.ms(t.duration_ms)), el("td", {}, fmt.usd(t.cost_usd))));
+  $("traces").replaceChildren(head, ...(rows.length ? rows : [el("tr", {}, el("td", { colspan: 8, class: "empty" }, "No traces yet. Point the SDK or an OTLP exporter at this server."))]));
+}
+
+function renderCharts(series) {
+  const labels = series.map((p) => new Date(p.t).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit" }));
+  const base = { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+    plugins: { legend: { labels: { color: "#8b98a5" } } },
+    scales: { x: { ticks: { color: "#8b98a5", maxTicksLimit: 8 }, grid: { color: "#1f2a37" } } } };
+  const make = (id, datasets, scales) => {
+    charts[id]?.destroy();
+    charts[id] = new Chart($(id), { type: "bar", data: { labels, datasets }, options: { ...base, scales: { ...base.scales, ...scales } } });
+  };
+  const y = (pos, grid = true) => ({ position: pos, ticks: { color: "#8b98a5" }, grid: { color: grid ? "#1f2a37" : "transparent" } });
+  make("callsChart", [
+    { label: "calls", data: series.map((p) => p.calls), backgroundColor: "#5eead4" },
+    { label: "errors", data: series.map((p) => p.errors), backgroundColor: "#f87171" },
+  ], { y: y("left") });
+  make("costChart", [
+    { label: "cost (USD)", data: series.map((p) => p.cost_usd), backgroundColor: "#a78bfa", yAxisID: "y" },
+    { label: "p95 (ms)", data: series.map((p) => p.p95_ms), type: "line", borderColor: "#fbbf24", pointRadius: 0, tension: .3, yAxisID: "y1" },
+  ], { y: y("left"), y1: y("right", false) });
+}
+
+async function openTrace(traceId, name) {
+  const raw = await getJSON("/api/traces/" + encodeURIComponent(traceId));
+  const start = Math.min(...raw.map((s) => Date.parse(s.start_time)));
+  const end = Math.max(...raw.map((s) => Date.parse(s.start_time) + s.duration_ms));
+  const total = Math.max(end - start, 1);
+  // Depth-first order, so parallel branches don't interleave in the waterfall.
+  const ids = new Set(raw.map((s) => s.span_id)), kids = {}, spans = [], depth = {};
+  for (const s of raw) (kids[ids.has(s.parent_id) ? s.parent_id : "root"] ??= []).push(s);
+  const walk = (key, d) => { for (const s of kids[key] ?? []) { depth[s.span_id] = d; spans.push(s); walk(s.span_id, d + 1); } };
+  walk("root", 0);
+  $("traceTitle").textContent = name + " · " + fmt.ms(total);
+  $("waterfall").replaceChildren(...spans.map((s) => {
+    const left = ((Date.parse(s.start_time) - start) / total) * 100;
+    const width = (s.duration_ms / total) * 100;
+    const bar = el("div", { class: "wf-bar k-" + s.kind + (s.status === "error" ? " k-error" : ""), style: `left:${left}%;width:${width}%` });
+    return el("div", { class: "wf-row", onclick: () => showSpan(s) },
+      el("div", { style: `padding-left:${depth[s.span_id] * 14}px;overflow:hidden;text-overflow:ellipsis` }, s.name, el("span", { class: "muted" }, " · " + s.kind)),
+      el("div", { class: "wf-track" }, bar), el("div", { class: "muted", style: "text-align:right" }, fmt.ms(s.duration_ms)));
+  }));
+  showSpan(spans.find((s) => s.kind === "llm") ?? spans[0]);
+  $("trace").showModal();
+}
+
+function showSpan(s) {
+  const facts = [["kind", s.kind], ["status", s.status], ["model", s.model], ["provider", s.provider],
+    ["tokens", s.input_tokens != null ? `${s.input_tokens} in / ${s.output_tokens ?? 0} out` : null],
+    ["cost", s.cost_usd != null ? fmt.usd(s.cost_usd) : null], ["duration", fmt.ms(s.duration_ms)]].filter(([, v]) => v != null);
+  $("spanDetail").replaceChildren(
+    el("h2", {}, s.name),
+    el("div", { style: "display:flex;flex-wrap:wrap;gap:14px;margin-bottom:10px" }, ...facts.map(([k, v]) => el("div", {}, el("span", { class: "muted" }, k + ": "), v))),
+    ...(s.error ? [el("pre", { style: "color:#f87171" }, s.error)] : []),
+    ...(s.input ? [el("h2", {}, "input"), el("pre", {}, s.input)] : []),
+    ...(s.output ? [el("h2", {}, "output"), el("pre", {}, s.output)] : []),
+    ...(Object.keys(s.attributes || {}).length ? [el("h2", {}, "attributes"), el("pre", {}, JSON.stringify(s.attributes, null, 2))] : []),
+  );
+}
+
+async function load() {
+  try {
+    const [s, ts, traces] = await Promise.all([
+      getJSON("/api/summary?" + qs()), getJSON("/api/timeseries?" + qs()),
+      getJSON("/api/traces?limit=50" + ($("project").value ? "&project=" + encodeURIComponent($("project").value) : "")),
+    ]);
+    renderKpis(s); renderModels(s.models); renderCharts(ts); renderTraces(traces);
+  } catch (e) { console.error(e); }
+}
+$("closeTrace").onclick = () => $("trace").close();
+for (const id of ["window", "project"]) $(id).onchange = load;
+$("refresh").onclick = load;
+load(); setInterval(load, 15000);
+</script>
+</body>
+</html>

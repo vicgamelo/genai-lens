@@ -1,0 +1,57 @@
+[project]
+name = "genai-lens"
+version = "0.1.0"
+description = "Self-hosted observability for LLM apps and agents: traces, tokens, cost and latency, with an OpenTelemetry GenAI endpoint."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["llm", "observability", "opentelemetry", "tracing", "agents", "llmops", "genai"]
+authors = [
+    { name = "Victor Gabriel Andrade de Melo", email = "victor.845.melo@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+server = [
+    "fastapi>=0.120",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.6",
+    "sqlalchemy>=2.0.36",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.urls]
+Homepage = "https://github.com/vicgamelo/genai-lens"
+
+[project.scripts]
+genai-lens-server = "genai_lens.server.app:main"
+
+[build-system]
+requires = ["uv_build>=0.12.19,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["examples", "*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003", "B008"]
+
+[tool.mypy]
+strict = true
+packages = ["genai_lens"]
+mypy_path = "src"
