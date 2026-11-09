@@ -88,7 +88,7 @@ export OTEL_SERVICE_NAME=rag-api          # becomes the project
 | `GENAI_LENS_PRICING_FILE` | — | JSON `{ "model-prefix": {"input_per_mtok": 1, "output_per_mtok": 2} }` |
 
 > The dashboard and read APIs have no built-in auth: put them behind your reverse proxy
-> (see [vps-infra](https://github.com/vicgamelo/vps-infra) for a Caddy setup with basic auth).
+> (basic auth in Caddy or nginx is enough).
 
 ## API
 
